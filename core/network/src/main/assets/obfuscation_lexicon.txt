@@ -1,0 +1,5 @@
+# Outbound obfuscation lexicon (one term per line, '#' starts a comment).
+# Replace via hot update: ObfuscationLexiconStore.update(...)
+违禁词测试项
+敏感词
+敏感词测试项

@@ -12,6 +12,8 @@ import top.wkbin.taixu.harness.HarnessProviderRunner
 import top.wkbin.taixu.harness.HarnessToolRoundRunner
 import top.wkbin.taixu.harness.HarnessWorkspaceRecommendations
 import top.wkbin.taixu.harness.ProviderResponseNormalizer
+import top.wkbin.taixu.harness.RefusalCascade
+import top.wkbin.taixu.harness.StrategyReplay
 import top.wkbin.taixu.harness.SubagentOrchestrator
 import top.wkbin.taixu.harness.ToolExecutor
 import top.wkbin.taixu.harness.ToolRoundDispatcher
@@ -165,8 +167,13 @@ val harnessModule = module {
             agentEventLogger = get(),
             contextAssembler = get(),
             compactionManager = get(), context = get(),
+            refusalCascade = get(),
+            strategyReplay = get(),
+            onStrategySuccess = { observation -> get<StrategyReplay>().record(observation) },
         )
     }
+    single { RefusalCascade() }
+    single { StrategyReplay(repository = get()) }
     single { top.wkbin.taixu.harness.McpToolMountResolver(mcpManager = get(), repository = get(), policies = get(), capabilityWriter = get()) }
 
     factory<HarnessToolRoundRunner> {

@@ -52,6 +52,12 @@ class HarnessProviderRunner(
     private val contextAssembler: ApiContextAssembler,
     private val compactionManager: CompactionManager,
     private val context: Context,
+    /** SSE refusal cascade; disabled/no-op unless a refusal is detected in the head window. */
+    private val refusalCascade: RefusalCascade = RefusalCascade(),
+    /** Records a refusal->success strategy so the next turn can replay it as few-shot (module 4). */
+    private val onStrategySuccess: suspend (StrategyObservation) -> Unit = {},
+    /** Local experience replay; null = feature off (keeps existing tests byte-identical). */
+    private val strategyReplay: StrategyReplay? = null,
 ) {
     suspend fun clearDiagnostics(sessionId: String) = requestDiagnostics.removeSessionDurably(sessionId)
 
@@ -103,15 +109,24 @@ class HarnessProviderRunner(
         var outputBudgetReduced = false
         var outputLimitRecoveries = 0
         var netRetry = 0
+        // S0 = untouched prompt; each REFUSAL bumps this and re-sends with the next rewrite.
+        var cascadeLevel = 0
+        var cascadeRefusals = 0
+        var cascadeOriginalPrompt: String = ""
         val governance = top.wkbin.taixu.harness.diagnostics.ContextGovernanceTrace()
-        suspend fun assembleFor(requestModel: ModelConfig) = contextAssembler.assemble(
-            sessId = sessId,
-            model = requestModel,
-            workspacePath = sessionWorkspace,
-            projectTypeOverride = sessionEntity?.projectType.orEmpty(),
-            thinkingMode = stateMirrors.requestThinkingMode(sessId),
-            sessionRunMode = sessionEntity?.runMode, trace = governance,
-        )
+        suspend fun assembleFor(requestModel: ModelConfig): List<ApiMessage> {
+            val base = contextAssembler.assemble(
+                sessId = sessId,
+                model = requestModel,
+                workspacePath = sessionWorkspace,
+                projectTypeOverride = sessionEntity?.projectType.orEmpty(),
+                thinkingMode = stateMirrors.requestThinkingMode(sessId),
+                sessionRunMode = sessionEntity?.runMode, trace = governance,
+            )
+            // 经验回放（模块4）：作为 few-shot 块拼在 system prompt 尾部；预算不足时仓库侧先裁掉最旧记录。
+            val replay = strategyReplay ?: return base
+            return runCatching { replay.inject(base, lastUserPromptOf(base)) }.getOrDefault(base)
+        }
         var requestMessages = assembleFor(model)
         var imageStripped = false
         var overflowRecovered = false
@@ -184,6 +199,34 @@ class HarnessProviderRunner(
                     if (streamText.length > 0) {
                         messageProjector.streamText(sessId, assistantId, assistantAt, streamText.snapshot())
                     }
+                }
+
+                // 拒答级联：仅在“尚未提交 tool_calls、尚未落库”的时刻判定，命中即整轮丢弃重发。
+                // 审批检查点在 ToolExecutor 侧，本分支不触碰审批状态，因此等待中的审批不会被重试打断。
+                val refusalHead = streamText.toString()
+                if (
+                    streamed != null &&
+                    refusalCascade.shouldEscalateAfter(
+                        headText = refusalHead,
+                        level = cascadeLevel,
+                        toolCallCount = streamed!!.toolCalls.size,
+                    )
+                ) {
+                    if (cascadeRefusals == 0) cascadeOriginalPrompt = lastUserPromptOf(requestMessages)
+                    cascadeRefusals++
+                    cascadeLevel++
+                    agentEventLogger.log(
+                        sessId,
+                        "RefusalCascade",
+                        "识别到拒答特征（第 $cascadeRefusals 轮），升级至 ${refusalCascade.rewriteFor(cascadeLevel).code} 后重发；本轮不落库",
+                    )
+                    metrics.streamRetry()
+                    stateMirrors.setThinkingLive(sessId, false)
+                    stateMirrors.setStatus(sessId, "检测到拒答，按 ${refusalCascade.rewriteFor(cascadeLevel).code} 改写后重试")
+                    resetStreamBaseline()
+                    streamed = null
+                    requestMessages = refusalCascade.escalate(requestMessages, cascadeLevel)
+                    continue
                 }
             } catch (cancellation: CancellationException) {
                 persistCancelledPartial(sessId, assistantId, assistantAt, streamText, streamReasoning, startedAt, operationId, round)
@@ -437,6 +480,27 @@ class HarnessProviderRunner(
         // 仅在本轮请求真正成功后记录估算值，与 HarnessLoop 里 recordUsage 的计量轮次对齐
         metrics.recordEstimatedInput(estimateRetryRequestTokens(requestMessages) + toolSchemaTokens)
         messageProjector.endStreaming(sessId)
+        if (cascadeRefusals > 0) {
+            val success = streamed!!
+            val rewritten = lastUserPromptOf(requestMessages)
+            agentEventLogger.log(
+                sessId,
+                "RefusalCascadeSuccess",
+                "第 $cascadeRefusals 次拒答后于 ${refusalCascade.rewriteFor(cascadeLevel).code} 成功；写入经验回放候选",
+            )
+            runCatching {
+                onStrategySuccess(
+                    StrategyObservation(
+                        originalPrompt = cascadeOriginalPrompt,
+                        strategyLevel = cascadeLevel,
+                        strategyCode = refusalCascade.rewriteFor(cascadeLevel).code,
+                        rewrittenPrompt = rewritten,
+                        responseDigest = responseDigestOf(success.content.orEmpty()),
+                        createdAt = now(),
+                    ),
+                )
+            }.onFailure { agentEventLogger.log(sessId, "RefusalCascadePersist", "经验回放写入失败：${it.message}", it) }
+        }
         return TurnProviderOutcome.Success(streamed, streamText.toString())
     }
 

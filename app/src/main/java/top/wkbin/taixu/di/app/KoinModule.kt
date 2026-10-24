@@ -139,6 +139,12 @@ val appModule = module {
 
     single<ToolDao> { provideToolDao(database = get()) }
 
+    single<top.wkbin.taixu.core.database.SuccessfulStrategyRepository> {
+        top.wkbin.taixu.core.database.SuccessfulStrategyRepository(
+            dao = get<AppDatabase>().successfulStrategyDao(),
+        )
+    }
+
     single<InstallLogDao> { provideInstallLogDao(database = get()) }
 
     single<InstallTaskDao> { provideInstallTaskDao(database = get()) }

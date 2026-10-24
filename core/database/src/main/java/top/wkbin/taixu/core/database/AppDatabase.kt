@@ -40,6 +40,7 @@ import top.wkbin.taixu.core.database.task.AgentTaskDao
         BuildScriptEntity::class,
         ProjectBuildScriptBindingEntity::class,
         AgentTaskEntity::class,
+        SuccessfulStrategyEntity::class,
         WorkflowEntity::class,
         WorkflowExecutionLogEntity::class,
         WorkflowScheduleEntity::class,
@@ -62,7 +63,7 @@ import top.wkbin.taixu.core.database.task.AgentTaskDao
         GroupDeliveryEntity::class,
         BotAssignmentRequestEntity::class,
     ],
-    version = 74,
+    version = 75,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -97,5 +98,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun botScheduleDeliveryDao(): BotScheduleDeliveryDao
     abstract fun botAssignmentDao(): BotAssignmentDao
     abstract fun botGroupSessionDao(): BotGroupSessionDao
+    abstract fun successfulStrategyDao(): SuccessfulStrategyDao
 }
 

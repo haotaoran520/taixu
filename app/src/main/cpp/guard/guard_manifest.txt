@@ -1,0 +1,2 @@
+# path_prefix	asset_name (pre-seeded safe copy under app files dir)
+/data/local/tmp/secrets/	secret_copy.bin
