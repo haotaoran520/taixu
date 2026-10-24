@@ -145,6 +145,10 @@ val appModule = module {
         )
     }
 
+    single<top.wkbin.taixu.harness.RefusalCascade> { top.wkbin.taixu.harness.RefusalCascade() }
+
+    single<top.wkbin.taixu.harness.StrategyReplay> { top.wkbin.taixu.harness.StrategyReplay(repository = get()) }
+
     single<InstallLogDao> { provideInstallLogDao(database = get()) }
 
     single<InstallTaskDao> { provideInstallTaskDao(database = get()) }

@@ -133,3 +133,49 @@ internal fun responseDigestOf(text: String): String {
     val bytes = java.security.MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray(Charsets.UTF_8))
     return bytes.joinToString("") { "%02x".format(it) }.take(64)
 }
+
+/**
+ * Per-turn cascade state machine. Kept here (not in the runner) so the runner stays small enough
+ * for the repository's file-size ratchet.
+ *
+ * Only ever touched in the window between "stream finished" and "tool_calls submitted / row
+ * persisted": the approval checkpoint lives in ToolExecutor, so escalation can never bypass or
+ * interrupt a pending approval.
+ */
+class CascadeTracker(private val cascade: RefusalCascade = RefusalCascade()) {
+
+    var refusals: Int = 0
+        private set
+    var level: Int = 0
+        private set
+    private var originalPrompt: String = ""
+
+    val code: String get() = cascade.rewriteFor(level).code
+
+    /** Returns the escalated transcript when this round is a refusal, null when it is a real answer. */
+    fun onRefusal(
+        headText: String,
+        streamed: ChatResult?,
+        messages: List<ApiMessage>,
+    ): List<ApiMessage>? {
+        val success = streamed ?: return null
+        if (!cascade.shouldEscalateAfter(headText, level, success.toolCalls.size)) return null
+        if (refusals == 0) originalPrompt = lastUserPromptOf(messages)
+        refusals++
+        level++
+        return cascade.escalate(messages, level)
+    }
+
+    /** Builds the replay observation once a previously refused turn finally succeeds. */
+    fun observationFor(messages: List<ApiMessage>, content: String, createdAt: Long): StrategyObservation? {
+        if (refusals == 0) return null
+        return StrategyObservation(
+            originalPrompt = originalPrompt,
+            strategyLevel = level,
+            strategyCode = code,
+            rewrittenPrompt = lastUserPromptOf(messages),
+            responseDigest = responseDigestOf(content),
+            createdAt = createdAt,
+        )
+    }
+}
