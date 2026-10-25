@@ -20,10 +20,21 @@ if(TAIXU_GUARD_HOOK)
     if(NOT TARGET bytehook::bytehook)
         if(BYTEHOOK_PREFAB)
             set(_bytehook_prefab "${BYTEHOOK_PREFAB}/modules/bytehook")
-            add_library(bytehook::bytehook STATIC IMPORTED)
-            set_target_properties(bytehook::bytehook PROPERTIES
-                IMPORTED_LOCATION "${_bytehook_prefab}/libs/android.${ANDROID_ABI}/libbytehook.a"
-                INTERFACE_INCLUDE_DIRECTORIES "${_bytehook_prefab}/include")
+            set(_bytehook_lib_dir "${_bytehook_prefab}/libs/android.${ANDROID_ABI}")
+            # bytehook 的 prefab 上游只给 libbytehook.so（shared），个别版本给 .a；两种都认。
+            if(EXISTS "${_bytehook_lib_dir}/libbytehook.so")
+                add_library(bytehook::bytehook SHARED IMPORTED)
+                set_target_properties(bytehook::bytehook PROPERTIES
+                    IMPORTED_LOCATION "${_bytehook_lib_dir}/libbytehook.so"
+                    INTERFACE_INCLUDE_DIRECTORIES "${_bytehook_prefab}/include")
+            elseif(EXISTS "${_bytehook_lib_dir}/libbytehook.a")
+                add_library(bytehook::bytehook STATIC IMPORTED)
+                set_target_properties(bytehook::bytehook PROPERTIES
+                    IMPORTED_LOCATION "${_bytehook_lib_dir}/libbytehook.a"
+                    INTERFACE_INCLUDE_DIRECTORIES "${_bytehook_prefab}/include")
+            else()
+                message(FATAL_ERROR "bytehook native lib not found under ${_bytehook_lib_dir}")
+            endif()
         else()
             message(FATAL_ERROR "bytehook prefab not found: enable Prefab in Gradle or pass -DBYTEHOOK_PREFAB=<prefab dir>")
         endif()
