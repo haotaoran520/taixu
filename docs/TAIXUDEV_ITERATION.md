@@ -53,3 +53,4 @@
 ## 6. 第三方许可
 
 - ByteHook（`com.bytedance:bytehook:1.1.2`，Apache-2.0）：预编译 `libbytehook.so` 随包分发，源码与许可见 https://github.com/bytedance/bhook 。
+- ShadowHook（`com.bytedance.android:shadowhook:2.0.1`，MIT）：ByteHook 1.1.x 的 `DT_NEEDED` 依赖，`libshadowhook.so` 必须一起随包，否则 dlopen 失败。
