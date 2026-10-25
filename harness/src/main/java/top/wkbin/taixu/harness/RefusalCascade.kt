@@ -50,9 +50,26 @@ data class StrategyRewrite(val level: Int, val code: String, val directive: Stri
  * touches approval state, so pending approvals can never be interrupted by a cascade retry.
  */
 class RefusalCascade(
-    val policy: CascadePolicy = CascadePolicy(),
-    val detector: RefusalDetector = RefusalDetector(policy),
+    policy: CascadePolicy = CascadePolicy(),
+    detector: RefusalDetector = RefusalDetector(policy),
 ) {
+
+    /**
+     * 设置页可调：开关与 S4 上限在运行时热更新。只影响下一轮判定，
+     * 已经进入审批等待的一轮不会被改写，也不会重发。
+     */
+    @Volatile
+    var policy: CascadePolicy = policy
+        private set
+
+    @Volatile
+    var detector: RefusalDetector = detector
+        private set
+
+    fun update(newPolicy: CascadePolicy) {
+        policy = newPolicy
+        detector = RefusalDetector(newPolicy)
+    }
 
     val enabled: Boolean get() = policy.enabled
 

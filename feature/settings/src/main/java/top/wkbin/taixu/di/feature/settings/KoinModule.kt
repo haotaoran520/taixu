@@ -122,6 +122,16 @@ val featureSettingsModule = module {
 
     single<SponsorListRepository> { SponsorListRepository(httpClient = get()) }
 
+    viewModel<top.wkbin.taixu.ui.settings.IterationModulesViewModel> {
+        top.wkbin.taixu.ui.settings.IterationModulesViewModel(
+            context = get(),
+            tuning = get(),
+            strategyRepository = get(),
+            refusalCascade = get(),
+            logger = get(),
+        )
+    }
+
     viewModel<SponsorListViewModel> { SponsorListViewModel(repository = get()) }
 
     viewModel<SshSettingsViewModel> {

@@ -116,4 +116,13 @@
     <string name="agent_running_send_mode_steer">引导</string>
     <string name="agent_running_send_mode_queue_description">当前轮仍在执行时，新输入排队等它结束后作为下一轮启动。</string>
     <string name="agent_running_send_mode_steer_description">当前轮仍在执行时，新输入在当前这批工具调用完成后、下一轮推理开始前注入。</string>
+    <string name="settings_iteration_modules_title">迭代增强</string>
+    <string name="settings_feature_obfuscation_title">出站零宽混淆</string>
+    <string name="settings_feature_obfuscation_subtitle">词表命中处插入 U+200B/U+200C · 入站不改写</string>
+    <string name="settings_feature_cascade_title">拒答级联重试</string>
+    <string name="settings_feature_cascade_subtitle">SSE 首段识别拒答 → S0–S4 改写重发 · 不落库</string>
+    <string name="settings_feature_pltguard_title">文件访问守卫</string>
+    <string name="settings_feature_pltguard_subtitle">ByteHook PLT hook open/openat/fopen · 仅本进程</string>
+    <string name="settings_feature_replay_title">经验回放</string>
+    <string name="settings_feature_replay_subtitle">成功策略按关键词召回 top-10 · few-shot 拼尾部</string>
 </resources>

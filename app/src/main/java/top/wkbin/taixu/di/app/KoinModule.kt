@@ -145,6 +145,8 @@ val appModule = module {
         )
     }
 
+    single { top.wkbin.taixu.core.datastore.IterationTuningStore(get()) }
+
     single<top.wkbin.taixu.harness.RefusalCascade> { top.wkbin.taixu.harness.RefusalCascade() }
 
     single<top.wkbin.taixu.harness.StrategyReplay> { top.wkbin.taixu.harness.StrategyReplay(repository = get()) }

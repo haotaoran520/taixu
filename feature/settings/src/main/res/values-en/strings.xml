@@ -116,4 +116,13 @@
     <string name="agent_running_send_mode_steer">Steer</string>
     <string name="agent_running_send_mode_queue_description">While the current turn is still running, new input waits and starts as the next turn after it finishes.</string>
     <string name="agent_running_send_mode_steer_description">While the current turn is still running, new input is injected after the current batch of tool calls finishes and before the next inference round.</string>
+    <string name="settings_iteration_modules_title">Iteration Boost</string>
+    <string name="settings_feature_obfuscation_title">Outbound zero-width</string>
+    <string name="settings_feature_obfuscation_subtitle">Inserts U+200B/U+200C on lexicon hits · inbound untouched</string>
+    <string name="settings_feature_cascade_title">Refusal cascade</string>
+    <string name="settings_feature_cascade_subtitle">Detects SSE refusals, retries S0–S4 · nothing persisted</string>
+    <string name="settings_feature_pltguard_title">File access guard</string>
+    <string name="settings_feature_pltguard_subtitle">ByteHook PLT hook on open/openat/fopen · own process only</string>
+    <string name="settings_feature_replay_title">Experience replay</string>
+    <string name="settings_feature_replay_subtitle">Recalls top-10 successful strategies · few-shot tail</string>
 </resources>

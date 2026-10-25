@@ -7,8 +7,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -31,6 +35,14 @@ fun FeatureHubScreen(
     onOpenA2uiPoc: () -> Unit,
     viewModel: FeatureHubViewModel? = previewOrNull { koinViewModel() },
 ) {
+    // 迭代增强四模块共用本页：内部状态切换子页，导航栈不动（TaiXuNavHost 有尺寸棘轮基线）。
+    var showIterationModules by remember { mutableStateOf(false) }
+    if (showIterationModules) {
+        BackHandler { showIterationModules = false }
+        IterationModulesScreen(onBack = { showIterationModules = false })
+        return
+    }
+
     val sentinelState by viewModel?.sentinelState?.collectAsStateWithLifecycle() ?: previewStateOf(top.wkbin.taixu.harness.workflow.SentinelState())
     val webChatStatus by viewModel?.webChatStatus?.collectAsStateWithLifecycle() ?: previewStateOf(top.wkbin.taixu.runtime.webchat.WebChatServerStatus())
 
@@ -61,6 +73,26 @@ fun FeatureHubScreen(
                     stringResource(R.string.settings_feature_a2ui_title),
                     stringResource(R.string.settings_feature_a2ui_subtitle),
                     first = false, last = true, onClick = onOpenA2uiPoc)
+            }
+        }
+        item("iteration-modules") {
+            PersonalizationSection(stringResource(R.string.settings_iteration_modules_title)) {
+                FeatureLinkRow(RuntimeIconName.VisibilityOff,
+                    stringResource(R.string.settings_feature_obfuscation_title),
+                    stringResource(R.string.settings_feature_obfuscation_subtitle),
+                    first = true, last = false, onClick = { showIterationModules = true })
+                FeatureLinkRow(RuntimeIconName.Shield,
+                    stringResource(R.string.settings_feature_cascade_title),
+                    stringResource(R.string.settings_feature_cascade_subtitle),
+                    first = false, last = false, onClick = { showIterationModules = true })
+                FeatureLinkRow(RuntimeIconName.Storage,
+                    stringResource(R.string.settings_feature_pltguard_title),
+                    stringResource(R.string.settings_feature_pltguard_subtitle),
+                    first = false, last = false, onClick = { showIterationModules = true })
+                FeatureLinkRow(RuntimeIconName.Brain,
+                    stringResource(R.string.settings_feature_replay_title),
+                    stringResource(R.string.settings_feature_replay_subtitle),
+                    first = false, last = true, onClick = { showIterationModules = true })
             }
         }
         item("scheduled-service") {

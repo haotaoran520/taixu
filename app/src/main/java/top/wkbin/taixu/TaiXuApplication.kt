@@ -33,6 +33,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
+import top.wkbin.taixu.core.datastore.IterationTuningStore
+import top.wkbin.taixu.core.network.ObfuscationRuntime
+import top.wkbin.taixu.core.network.TextObfuscator
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import top.wkbin.taixu.harness.workflow.WorkflowRunManager
@@ -96,10 +100,23 @@ class TaiXuApplication : Application(), Configuration.Provider {
             androidContext(this@TaiXuApplication)
             modules(taiXuModule)
         }
+        // 模块 1：绑定出站零宽混淆的词库（assets 兜底 + filesDir 热更新文件覆盖）。
+        // 未 attach 时 ObfuscationRuntime 直接返回原文，属安全降级，不会影响请求。
+        ObfuscationRuntime.attach(
+            assetReader = { assets.open(TextObfuscator.ASSET_PATH).bufferedReader().use { it.readText() } },
+            hotFile = File(filesDir, "obfuscation_lexicon.txt"),
+        )
         configureCursorWindowSize()
         crashReporter.install()
         recoverPendingDataBackup()
         installMemoryWatchdog()
+        appScope.launch(Dispatchers.IO) {
+            // 冷启动恢复模块 1 的开关（设置页写入的独立 DataStore）。
+            runCatching {
+                IterationTuningStore(this@TaiXuApplication).obfuscationEnabled.first()
+                    .let { ObfuscationRuntime.setEnabled(it) }
+            }
+        }
         appScope.launch(Dispatchers.IO) {
             // 并发执行互不依赖的启动任务（crash 导出 / 特权恢复 / 浏览器 MCP bootstrap /
             // 技能入库 / MCP 预设入库），单任务失败不拖垮其他任务。

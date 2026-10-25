@@ -199,4 +199,21 @@ class RefusalCascadeTest {
             if (end < 0) null else line.substring(from, end)
         }
         .toList()
+
+    @Test
+    fun updateHotSwapsSwitchAndCeiling() {
+        val hot = RefusalCascade(CascadePolicy(enabled = true, maxLevel = 2))
+        assertTrue(hot.isRefusal("抱歉，我无法提供该内容"))
+        assertFalse(hot.canEscalate(2))
+
+        // 设置页把上限从 S2 调到 S4：下一次判定立即生效
+        hot.update(CascadePolicy(enabled = true, maxLevel = 4))
+        assertTrue(hot.canEscalate(2))
+        assertFalse(hot.canEscalate(4))
+
+        // 关闭后既不再识别拒答，也不再升级
+        hot.update(CascadePolicy(enabled = false, maxLevel = 4))
+        assertFalse(hot.isRefusal("抱歉，我无法提供该内容"))
+        assertFalse(hot.canEscalate(0))
+    }
 }

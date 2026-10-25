@@ -5,6 +5,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
+import top.wkbin.taixu.core.network.ObfuscationRuntime
 import top.wkbin.taixu.harness.diagnostics.withRequestDiagnostics
 
 /** Request policy shared by every wire API; independent of persisted model selection. */
@@ -33,7 +34,7 @@ internal class ProviderTransport(
         messages: List<ApiMessage>,
         sessionKey: String? = null,
     ): ChatResult {
-        val transcript = sanitizeApiTranscript(messages)
+        val transcript = obfuscateOutbound(sanitizeApiTranscript(messages))
         return request(model, sessionKey) { selected ->
             ordinaryApis.forModel(selected).chat(selected, transcript)
         }.also(::requireContent)
@@ -57,7 +58,7 @@ internal class ProviderTransport(
             timing.onContentChunk()
             onDelta(chunk)
         }
-        val transcript = sanitizeApiTranscript(messages)
+        val transcript = obfuscateOutbound(sanitizeApiTranscript(messages))
         val registry = if (onRequest == null) streamApis else adapters(streamClient.withRequestDiagnostics(onRequest))
         val result = request(model, sessionKey) { selected ->
             registry.forModel(selected).chatStream(selected, transcript, timedReasoning, onToolProgress, timedDelta)
@@ -65,6 +66,19 @@ internal class ProviderTransport(
         requireContent(result)
         val reasoningMs = timing.finish()
         return if (reasoningMs != null) result.copy(reasoningMs = reasoningMs) else result
+    }
+
+    /**
+     * 模块 1：出站零宽混淆。只在开关打开时逐条替换 message.content，
+     * 入站 SSE 文本完全不动（否则会破坏模型输出的排版与代码块）。
+     */
+    private fun obfuscateOutbound(messages: List<ApiMessage>): List<ApiMessage> {
+        if (!ObfuscationRuntime.isEnabled()) return messages
+        return messages.map { message ->
+            val content = message.content ?: return@map message
+            val obfuscated = ObfuscationRuntime.apply(content)
+            if (obfuscated == content) message else message.copy(content = obfuscated)
+        }
     }
 
     private fun requireContent(result: ChatResult) {

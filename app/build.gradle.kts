@@ -8,6 +8,10 @@ import org.gradle.kotlin.dsl.configure
 val appVersionName = "1.4.1"
 val appVersionCode = 41
 
+// TaiXuDev 预览包独占的 versionCode 偏移：它只用于同包名（top.wkbin.taixu.dev）自更新，
+// 抬高后不会被任何更旧的 dev 构建覆盖安装。
+val devVersionCodeOffset = 1000
+
 // TaiXuDev 双包构建开关：CI（.github/workflows/taixudev-build.yml）设 TAIXU_DEV_BUILD=1 时，
 // 产出独立预览包 top.wkbin.taixu.dev / 应用名 TaiXuDev / 版本后缀 -dev，
 // 与正式版（top.wkbin.taixu）及本地调试包（top.wkbin.taixu.debug）完全共存互不干扰。
@@ -29,7 +33,7 @@ extensions.configure<ApplicationExtension> {
         applicationId = if (taiXuDevBuild) "top.wkbin.taixu.dev" else "top.wkbin.taixu"
         minSdk = 29
         targetSdk = 37
-        versionCode = appVersionCode
+        versionCode = if (taiXuDevBuild) appVersionCode + devVersionCodeOffset else appVersionCode
         versionName = appVersionName
         // 应用名统一走 manifest placeholder：TaiXuDev 构建显示 "TaiXuDev"，其余显示 "太墟"。
         manifestPlaceholders["appLabel"] = if (taiXuDevBuild) "TaiXuDev" else "太墟"
@@ -69,7 +73,21 @@ extensions.configure<ApplicationExtension> {
             "or all entries in keystore.properties."
     }
 
+    // TaiXuDev 专用固定签名：CI 每次 runner 都是全新的 ~/.android/debug.keystore，
+    // 不固定就会造成"每次构建签名都变、必须卸载重装"。这份 keystore 只签 dev 预览包
+    // (top.wkbin.taixu.dev)，与正式版发布签名无关，因此可以随仓库公开。
+    val devSigningFile = rootProject.file("app/signing/taixu-dev.p12")
+    val devSigningReady = devSigningFile.isFile
+
     signingConfigs {
+        if (devSigningReady) {
+            create("dev") {
+                storeFile = devSigningFile
+                storePassword = "android"
+                keyAlias = "taixu-dev"
+                keyPassword = "android"
+            }
+        }
         create("release") {
             if (signingConfigured) {
                 val storeFilePath = requireNotNull(signingStoreFilePath)
@@ -95,8 +113,12 @@ extensions.configure<ApplicationExtension> {
                 applicationIdSuffix = ".debug"
             }
             versionNameSuffix = if (taiXuDevBuild) "-dev" else "-debug"
+            // 优先使用 release 签名（配置了 TAIXU_RELEASE_* 时），否则回落到仓库内固定的 dev 签名，
+            // 保证 CI 与本地构建出的 debug 包签名完全一致。
             if (signingConfigured) {
                 signingConfig = signingConfigs.getByName("release")
+            } else if (devSigningReady) {
+                signingConfig = signingConfigs.getByName("dev")
             }
         }
         release {

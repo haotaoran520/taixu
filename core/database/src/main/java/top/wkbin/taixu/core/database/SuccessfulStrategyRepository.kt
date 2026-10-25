@@ -42,6 +42,12 @@ class SuccessfulStrategyRepository(private val dao: SuccessfulStrategyDao) {
 
     suspend fun count(): Int = dao.count()
 
+    /** 设置页展示用：最近若干条成功策略（不参与召回打分）。 */
+    suspend fun recentRows(limit: Int = 20): List<SuccessfulStrategyEntity> = dao.recent(limit)
+
+    /** 清空经验回放库（仅作用于本进程的既有 Room 实例）。 */
+    suspend fun clear(): Int = dao.deleteOlderThan(Long.MAX_VALUE)
+
     suspend fun recall(
         query: String,
         limit: Int = 10,

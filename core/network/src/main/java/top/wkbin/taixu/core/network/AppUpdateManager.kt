@@ -76,7 +76,10 @@ class AppUpdateManager(
                     }
                 }
 
-                val hasUpdate = VersionCompare.isNewer(latestVersion, currentVersionName)
+                // TaiXuDev 预览包（top.wkbin.taixu.dev）跟随 Fork 的 CI 构建：官方 Release 既无法
+                // 覆盖安装（签名不同），也不该被当成"新版本"，否则每次启动都弹更新提示。
+                val devPreviewBuild = context.packageName.endsWith(".dev")
+                val hasUpdate = !devPreviewBuild && VersionCompare.isNewer(latestVersion, currentVersionName)
 
                 AppUpdateInfo(
                     currentVersion = currentVersionName,
