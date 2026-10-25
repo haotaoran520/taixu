@@ -19,6 +19,7 @@ class StrategyReplay(
 
     /** Persists a refusal->success escalation captured by [RefusalCascade]. */
     suspend fun record(observation: StrategyObservation) {
+        if (!IterationTuningFlags.strategyReplayEnabled) return
         repository.record(
             id = buildString {
                 append(observation.createdAt)
@@ -40,6 +41,7 @@ class StrategyReplay(
 
     /** Appends the few-shot block to the system message tail; returns the transcript unchanged when empty. */
     suspend fun inject(messages: List<ApiMessage>, query: String): List<ApiMessage> {
+        if (!IterationTuningFlags.strategyReplayEnabled) return messages
         if (messages.isEmpty() || query.isBlank()) return messages
         val block = repository.renderFewShot(recall(query))
         if (block.isBlank()) return messages

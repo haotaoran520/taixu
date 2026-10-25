@@ -1,0 +1,75 @@
+# 模块 3 专用：交叉编译 libguard_hook.so（ByteHook PLT 文件守卫）。
+# 主构建（taixudev-build.yml）不碰 native，so 以预编译产物随包分发，
+# 与既有的 libpty_native.so 完全同一套模式，避免给 APK 构建引入 NDK 依赖。
+name: Guard Hook Native (module 3)
+
+on:
+  workflow_dispatch:
+    inputs:
+      bytehook_version:
+        description: 'bytehook version on Maven Central'
+        default: '1.1.3'
+        required: false
+      abi:
+        description: 'Android ABI'
+        default: 'arm64-v8a'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-so:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r28c
+          add-to-path: false
+
+      - name: Fetch bytehook prefab
+        run: |
+          set -euo pipefail
+          V="${{ inputs.bytehook_version }}"
+          URL="https://repo1.maven.org/maven2/com/bytedance/android/bytehook/${V}/bytehook-${V}.aar"
+          mkdir -p bytehook
+          curl -fsSL "$URL" -o bytehook/bytehook.aar
+          unzip -q -o bytehook/bytehook.aar -d bytehook/aar
+          echo "--- prefab tree ---"
+          find bytehook/aar/prefab -maxdepth 4 | head -40
+
+      - name: Configure
+        run: |
+          set -euo pipefail
+          cmake -S app/src/main/cpp -B build/guard \
+            -DCMAKE_TOOLCHAIN_FILE="${{ steps.ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI="${{ inputs.abi }}" \
+            -DANDROID_PLATFORM=android-29 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DTAIXU_GUARD_HOOK=ON \
+            -DBYTEHOOK_PREFAB="$PWD/bytehook/aar/prefab" \
+            -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="$PWD/build/guard-out"
+
+      - name: Build guard_hook
+        run: cmake --build build/guard --target guard_hook --parallel 2
+
+      - name: Inspect artifact
+        run: |
+          set -euo pipefail
+          LIB=build/guard-out/libguard_hook.so
+          ls -l "$LIB"
+          file "$LIB" || true
+          echo "--- JNI symbols ---"
+          readelf -sW --dyn-syms "$LIB" | grep -E 'Java_top_wkbin|JNI_OnLoad' || true
+          echo "--- NEEDED ---"
+          readelf -d "$LIB" | grep -E 'NEEDED|SONAME' || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libguard_hook-${{ inputs.abi }}
+          path: build/guard-out/libguard_hook.so
+          if-no-files-found: error

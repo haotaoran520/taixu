@@ -39,6 +39,10 @@ data class IterationModulesState(
     val obfuscationSample: String = "",
     val obfuscationReady: Boolean = false,
     val pltGuardPackaged: Boolean = false,
+    /** 导入词库弹窗里的草稿；[lexiconTerms] 是去掉注释与空行后的有效词条数。 */
+    val lexiconDraft: String = "",
+    val lexiconTerms: Int = 0,
+    val lexiconNotice: String? = null,
 )
 
 /**
@@ -143,10 +147,34 @@ class IterationModulesViewModel(
                 it.copy(
                     obfuscationReady = ObfuscationRuntime.isReady(),
                     obfuscationSample = if (ok) ObfuscationRuntime.preview(SAMPLE_TEXT) else it.obfuscationSample,
+                    lexiconTerms = countTerms(lexiconText),
+                    lexiconNotice = if (ok) {
+                        "已生效：${countTerms(lexiconText)} 条词条"
+                    } else {
+                        "写入被拒绝：运行时词库尚未加载"
+                    },
                 )
             }
             if (!ok) logger.w("IterationModulesViewModel: lexicon hot update rejected (runtime not attached)")
         }
+    }
+
+    fun onLexiconDraftChange(text: String) {
+        _state.update { it.copy(lexiconDraft = text, lexiconTerms = countTerms(text), lexiconNotice = null) }
+    }
+
+    /** 把弹窗草稿写进 hot file；下一次出站请求即生效，无需重启。 */
+    fun applyLexiconDraft() {
+        val draft = _state.value.lexiconDraft
+        if (countTerms(draft) == 0) {
+            _state.update { it.copy(lexiconNotice = "词表为空：至少需要一行非注释词条") }
+            return
+        }
+        updateLexicon(draft)
+    }
+
+    fun dismissLexiconNotice() {
+        _state.update { it.copy(lexiconNotice = null) }
     }
 
     fun previewObfuscation(text: String) {
@@ -165,6 +193,11 @@ class IterationModulesViewModel(
                 .onFailure { logger.w("IterationModulesViewModel: persist $tag failed: ${it.message}", it) }
         }
     }
+
+    /** 与 `.trie` 装载规则一致：忽略空行与 `#` 注释行。 */
+    private fun countTerms(text: String): Int = text.lineSequence()
+        .map { it.trim() }
+        .count { it.isNotEmpty() && !it.startsWith("#") }
 
     companion object {
         private const val RECENT_LIMIT = 5

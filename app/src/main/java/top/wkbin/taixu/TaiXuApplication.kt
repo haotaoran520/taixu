@@ -37,6 +37,8 @@ import kotlinx.coroutines.flow.first
 import top.wkbin.taixu.core.datastore.IterationTuningStore
 import top.wkbin.taixu.core.network.ObfuscationRuntime
 import top.wkbin.taixu.core.network.TextObfuscator
+import top.wkbin.taixu.harness.IterationTuningFlags
+import top.wkbin.taixu.core.guard.GuardHook
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import top.wkbin.taixu.harness.workflow.WorkflowRunManager
@@ -111,10 +113,19 @@ class TaiXuApplication : Application(), Configuration.Provider {
         recoverPendingDataBackup()
         installMemoryWatchdog()
         appScope.launch(Dispatchers.IO) {
-            // 冷启动恢复模块 1 的开关（设置页写入的独立 DataStore）。
-            runCatching {
-                IterationTuningStore(this@TaiXuApplication).obfuscationEnabled.first()
-                    .let { ObfuscationRuntime.setEnabled(it) }
+            // 设置页的开关落在这份独立 DataStore 里；持续同步到运行时，
+            // 这样改开关后下一次请求就生效，不需要重启（模块 1 / 模块 4）。
+            val tuning = IterationTuningStore(this@TaiXuApplication)
+            launch {
+                runCatching { tuning.obfuscationEnabled.collect { ObfuscationRuntime.setEnabled(it) } }
+            }
+            launch {
+                runCatching {
+                    tuning.strategyReplayEnabled.collect { IterationTuningFlags.strategyReplayEnabled = it }
+                }
+            }
+            launch {
+                runCatching { tuning.pltGuardEnabled.collect { GuardHook.sync(this@TaiXuApplication, it) } }
             }
         }
         appScope.launch(Dispatchers.IO) {

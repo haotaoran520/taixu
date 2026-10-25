@@ -7,10 +7,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -38,6 +44,7 @@ fun IterationModulesScreen(
     viewModel: IterationModulesViewModel? = previewOrNull { koinViewModel() },
 ) {
     val state by viewModel?.state?.collectAsStateWithLifecycle() ?: previewStateOf(IterationModulesState())
+    var showLexiconDialog by remember { mutableStateOf(false) }
 
     PersonalizationScaffold("迭代增强", onBack) {
         item("iteration-intro") {
@@ -78,6 +85,17 @@ fun IterationModulesScreen(
                         title = "预览效果",
                         subtitle = "· = 插入的零宽字符；strip 后与原文完全一致",
                         onClick = { viewModel?.previewObfuscation(IterationModulesViewModel.SAMPLE_TEXT) },
+                    )
+                    SettingsRow(
+                        icon = RuntimeIconName.Edit,
+                        title = "导入词库（热更新）",
+                        subtitle = if (state.lexiconTerms > 0) {
+                            "当前草稿 ${state.lexiconTerms} 条词条；写入后下一轮出站立即生效"
+                        } else {
+                            "粘贴词表写入 filesDir，覆盖 assets 内置词库，无需重启"
+                        },
+                        value = state.lexiconNotice,
+                        onClick = { showLexiconDialog = true },
                     )
                     Column(
                         Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
@@ -196,6 +214,49 @@ fun IterationModulesScreen(
                 )
             }
         }
+    }
+
+    if (showLexiconDialog) {
+        AlertDialog(
+            onDismissRequest = { showLexiconDialog = false },
+            title = { Text("导入词库（热更新）") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "每行一个词条，# 开头为注释。写入 filesDir 后覆盖 assets 内置词库，只作用于出站请求。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = state.lexiconDraft,
+                        onValueChange = { viewModel?.onLexiconDraftChange(it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 6,
+                        maxLines = 10,
+                        label = { Text("词表") },
+                        supportingText = { Text("${state.lexiconTerms} 条有效词条") },
+                    )
+                    state.lexiconNotice?.let { notice ->
+                        Text(
+                            notice,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel?.applyLexiconDraft()
+                        showLexiconDialog = false
+                    },
+                ) { Text("写入并生效") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLexiconDialog = false }) { Text("取消") }
+            },
+        )
     }
 }
 

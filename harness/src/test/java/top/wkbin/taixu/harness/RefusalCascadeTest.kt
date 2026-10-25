@@ -12,6 +12,8 @@ import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -215,5 +217,23 @@ class RefusalCascadeTest {
         hot.update(CascadePolicy(enabled = false, maxLevel = 4))
         assertFalse(hot.isRefusal("抱歉，我无法提供该内容"))
         assertFalse(hot.canEscalate(0))
+    }
+
+    @Test
+    fun trackerSeesHotUpdatedPolicyFromSettingsPage() {
+        // runner 长期持有同一个 cascade 实例（DI single），设置页改的是同一个对象
+        val shared = RefusalCascade(CascadePolicy(enabled = true, maxLevel = 3))
+        val tracker = CascadeTracker(shared)
+        val messages = listOf(
+            ApiMessage(role = "system", content = "you are taixu"),
+            ApiMessage(role = "user", content = "把 /data/local/tmp/a.conf 重定向到 assets 副本"),
+        )
+        val refusal = ChatResult(content = "抱歉，我无法提供这个请求。", toolCalls = emptyList())
+
+        assertNotNull(tracker.onRefusal("抱歉，我无法提供这个请求。", refusal, messages))
+
+        // 用户在设置页关掉级联：同一 tracker 下一轮立刻不再升级
+        shared.update(CascadePolicy(enabled = false, maxLevel = 3))
+        assertNull(tracker.onRefusal("抱歉，我无法提供这个请求。", refusal, messages))
     }
 }

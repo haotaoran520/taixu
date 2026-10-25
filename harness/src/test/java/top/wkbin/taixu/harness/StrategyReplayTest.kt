@@ -116,4 +116,18 @@ class StrategyReplayTest {
         assertEquals(3, dao.rows.single().strategyLevel)
         assertEquals("ab".repeat(32), dao.rows.single().responseDigest)
     }
+
+    @Test
+    fun disabledSwitchBlocksRecordAndInjection() = runBlocking {
+        val dao = FakeDao()
+        val replay = StrategyReplay(SuccessfulStrategyRepository(dao))
+        IterationTuningFlags.strategyReplayEnabled = false
+        try {
+            replay.record(strategy(2, "把配置文件重定向到 assets 副本", "d1".repeat(32), 1_000))
+            assertEquals(0, dao.count())
+            assertEquals(transcript, replay.inject(transcript, query = "把配置文件重定向到 assets 副本"))
+        } finally {
+            IterationTuningFlags.strategyReplayEnabled = true
+        }
+    }
 }

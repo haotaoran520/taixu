@@ -1,0 +1,3 @@
+# 模块 3 重定向规则：<原始路径前缀>\t<安全副本文件名>
+# 命中且副本存在时才重定向，否则原样放行。
+/data/local/tmp/secrets/	secret_copy.bin

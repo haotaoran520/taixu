@@ -10,7 +10,24 @@ target_compile_options(pty_native PRIVATE -Wall -Werror=implicit-function-declar
 option(TAIXU_GUARD_HOOK "Build libguard_hook.so (ByteHook PLT file guard)" OFF)
 
 if(TAIXU_GUARD_HOOK)
-    find_package(bytehook REQUIRED CONFIG)
+    # 两条路径都能满足：
+    # 1) Gradle + Prefab（AGP 生成 bytehook::bytehook 的 config）；
+    # 2) 直接用 NDK 交叉编译（.github/workflows/guard-hook-native.yml 走这条），
+    #    此时用 -DBYTEHOOK_PREFAB=<bytehook.aar 解包后的 prefab 目录>。
+    if(NOT TARGET bytehook::bytehook)
+        find_package(bytehook CONFIG QUIET)
+    endif()
+    if(NOT TARGET bytehook::bytehook)
+        if(BYTEHOOK_PREFAB)
+            set(_bytehook_prefab "${BYTEHOOK_PREFAB}/modules/bytehook")
+            add_library(bytehook::bytehook STATIC IMPORTED)
+            set_target_properties(bytehook::bytehook PROPERTIES
+                IMPORTED_LOCATION "${_bytehook_prefab}/libs/android.${ANDROID_ABI}/libbytehook.a"
+                INTERFACE_INCLUDE_DIRECTORIES "${_bytehook_prefab}/include")
+        else()
+            message(FATAL_ERROR "bytehook prefab not found: enable Prefab in Gradle or pass -DBYTEHOOK_PREFAB=<prefab dir>")
+        endif()
+    endif()
     add_library(guard_hook SHARED guard/guard_hook.cpp guard/guard_rules.cpp)
     target_include_directories(guard_hook PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/guard)
     target_compile_features(guard_hook PRIVATE cxx_std_17)
