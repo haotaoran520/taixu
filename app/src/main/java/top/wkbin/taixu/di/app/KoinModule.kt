@@ -139,10 +139,12 @@ val appModule = module {
 
     single<ToolDao> { provideToolDao(database = get()) }
 
+    single<top.wkbin.taixu.core.database.SuccessfulStrategyDao> {
+        get<AppDatabase>().successfulStrategyDao()
+    }
+
     single<top.wkbin.taixu.core.database.SuccessfulStrategyRepository> {
-        top.wkbin.taixu.core.database.SuccessfulStrategyRepository(
-            dao = get<AppDatabase>().successfulStrategyDao(),
-        )
+        top.wkbin.taixu.core.database.SuccessfulStrategyRepository(dao = get())
     }
 
     single { top.wkbin.taixu.core.datastore.IterationTuningStore(get()) }
