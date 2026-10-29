@@ -61,7 +61,7 @@ class ApprovalPolicyEngine(
         if (mode == ApprovalMode.FULL_ACCESS) return ApprovalDecision(false)
         // list/inspect/decline 是元操作；script 仅编排，实际调用逐条重入策略入口。
         if (tool == HarnessTool.MCP && rawToolName == "use_capability" &&
-            args["action"]?.jsonPrimitive?.content.orEmpty().trim().lowercase() in setOf("list", "inspect", "decline", "script")
+            args["action"]?.jsonPrimitive?.content.orEmpty().trim().lowercase() in setOf("list", "inspect", "decline", "route", "script")
         ) {
             return ApprovalDecision(false)
         }
@@ -191,7 +191,7 @@ class ApprovalPolicyEngine(
     /** MCP 只读判定：use_capability 的只读元操作，或内置浏览器风险矩阵中的 low 档工具。 */
     private fun isReadOnlyMcpCall(args: JsonObject, rawToolName: String?): Boolean {
         if (rawToolName == "use_capability" &&
-            args["action"]?.jsonPrimitive?.content.orEmpty().trim().lowercase() in setOf("list", "inspect", "decline")
+            args["action"]?.jsonPrimitive?.content.orEmpty().trim().lowercase() in setOf("list", "inspect", "decline", "route")
         ) {
             return true
         }

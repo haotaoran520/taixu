@@ -93,3 +93,6 @@ scripts_patch/
 
 # 设计稿截图（本地验证用，不入库）
 shots/
+
+# 本地 CI 产物落盘（不提交）
+.taixu-dev-artifact/
