@@ -14,6 +14,7 @@ internal class RoutingRationaleBuilder {
         breakdown: ScoreBreakdown,
         ranked: List<Pair<ToolDescriptor, ScoreBreakdown>>,
         position: Int,
+        peers: List<ToolDescriptor> = emptyList(),
     ): CandidateRationale {
         val advantages = ArrayList<String>()
         val limitations = ArrayList<String>()
@@ -58,7 +59,7 @@ internal class RoutingRationaleBuilder {
                 listOf("未找到明确的能力优势证据（工具描述与能力标签均未命中任务要求）")
             },
             limitations = limitations.ifEmpty { listOf("未记录已知限制") },
-            comparison = compare(tool, spec, breakdown, ranked, position),
+            comparison = compare(tool, spec, breakdown, ranked, position, peers),
             evidenceRefs = evidenceRefs.distinct(),
         )
     }
@@ -70,6 +71,7 @@ internal class RoutingRationaleBuilder {
         breakdown: ScoreBreakdown,
         ranked: List<Pair<ToolDescriptor, ScoreBreakdown>>,
         position: Int,
+        peers: List<ToolDescriptor>,
     ): String {
         val competitor = ranked.drop(position + 1).firstOrNull { it.first.familyId == tool.familyId && tool.familyId.isNotBlank() }
             ?: ranked.getOrNull(position + 1)
@@ -90,8 +92,22 @@ internal class RoutingRationaleBuilder {
             breakdown.reliability.value > otherScore.reliability.value -> "运行更稳定"
             else -> "能力标签覆盖面相当"
         }
+        // 同族横向差异：只引用两侧都显式声明的字段，值原样引用。
+        val deltas = FamilyDifferentials.deltas(tool, peers)
+        val gapNotes = FamilyDifferentials.peerGaps(tool, peers)
+        val deltaText = buildString {
+            if (deltas.isNotEmpty()) {
+                append("；同族差异：")
+                append(deltas.joinToString("；") { it.render() })
+            }
+            if (gapNotes.isNotEmpty()) {
+                append("；覆盖优势：")
+                append(gapNotes.joinToString("；"))
+            }
+        }
         return "相对 ${other.toolId} $relation ${pct(kotlin.math.abs(gap))}：$reason" +
-            if (other.constraints.isNotEmpty()) "；对方限制：${other.constraints.first()}" else ""
+            if (other.constraints.isNotEmpty()) "；对方限制：${other.constraints.first()}" else "" +
+            deltaText
     }
 
     private fun matchedCapabilities(tool: ToolDescriptor, spec: SubTaskSpec): List<String> {

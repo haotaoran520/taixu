@@ -100,14 +100,37 @@ internal data class ReliabilityStat(
     val hasEvidence: Boolean get() = evidence == EvidenceState.MEASURED && invocationCount > 0
 }
 
-/** 质量画像：按任务类别拆分，绝不使用"全任务混合成功率"代替。 */
+/** 可靠性查询结果：区分"本任务类别实测"与"全局统计回退"，后者不得被当成同类证据。 */
+internal data class ReliabilityLookup(
+    val stat: ReliabilityStat,
+    val scopedToTaskClass: Boolean,
+)
+
+/**
+ * 质量画像：按任务类别拆分，绝不使用"全任务混合成功率"代替。
+ *
+ * 阶段二要求四个维度都带任务类别口径：成功率、质量、可靠性、样本量。
+ * 当某类别缺可靠性数据时允许回退到全局统计，但必须通过 [ReliabilityLookup.scopedToTaskClass]
+ * 显式告知调用方"这不是同类证据"。
+ */
 internal data class ToolQualityProfile(
     val taskClasses: Map<String, TaskClassStat> = emptyMap(),
+    /** 全局可靠性：跨任务聚合，仅作回退。 */
     val reliability: ReliabilityStat = ReliabilityStat(),
+    /** 按任务类别拆分的可靠性。 */
+    val reliabilityByTaskClass: Map<String, ReliabilityStat> = emptyMap(),
 ) {
     fun statFor(taskClass: String?): TaskClassStat? {
         val key = taskClass?.takeIf { it.isNotBlank() } ?: return null
         return taskClasses[key]
+    }
+
+    fun reliabilityFor(taskClass: String?): ReliabilityLookup? {
+        val key = taskClass?.takeIf { it.isNotBlank() }
+        val scoped = key?.let { reliabilityByTaskClass[it] }
+        if (scoped != null && scoped.hasEvidence) return ReliabilityLookup(scoped, true)
+        if (reliability.hasEvidence) return ReliabilityLookup(reliability, false)
+        return null
     }
 }
 
@@ -138,6 +161,15 @@ internal data class ToolDescriptor(
     val availability: AvailabilityState = AvailabilityState.AVAILABLE,
     val availabilityReason: String = "",
     val capabilityEvidence: EvidenceState = EvidenceState.INFERRED,
+    /**
+     * 同族横向差异字段：维度名 → 该工具在该维度上的**客观取值**。
+     *
+     * 只允许放可从工具声明或实测得到的事实（如 input=url、rendering=static_only、output=text），
+     * 用于生成"比同族更适合哪里"的差异说明；不允许放"更稳定""更快"这类无证据的主观判断。
+     */
+    val familyDifferentiators: Map<String, String> = emptyMap(),
+    /** 输入 Schema 摘要：注入候选时随工具一并给模型，避免"选对工具却用错参数"。 */
+    val inputSchemaSummary: String = "",
 ) {
     val isEligible: Boolean get() = availability == AvailabilityState.AVAILABLE
 

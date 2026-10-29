@@ -53,7 +53,7 @@ internal class ToolRoutingEngine(
                 tool = tool,
                 rank = index + 1,
                 breakdown = breakdown,
-                rationale = rationaleBuilder.build(tool, spec, breakdown, scored, index),
+                rationale = rationaleBuilder.build(tool, spec, breakdown, scored, index, peers = descriptors),
             )
         }
 

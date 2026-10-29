@@ -4,7 +4,9 @@ import kotlinx.serialization.json.JsonObject
 import top.wkbin.taixu.core.model.McpToolAnnotations
 import top.wkbin.taixu.core.model.McpToolInfo
 import top.wkbin.taixu.harness.routing.EvidenceState
+import top.wkbin.taixu.harness.routing.InjectionVariant
 import top.wkbin.taixu.harness.routing.ExecutionPolicy
+import top.wkbin.taixu.harness.routing.RoutingInjection
 import top.wkbin.taixu.harness.routing.RoutingLog
 import top.wkbin.taixu.harness.routing.SideEffectLevel
 import top.wkbin.taixu.harness.routing.SubTaskSpec
@@ -119,7 +121,18 @@ class CapabilityToolRouter(
             requiresFreshData = isTrue(args, "fresh"),
             readOnlyOnly = isTrue(args, "read_only"),
         )
-        return true to RoutingLog.render(ToolRoutingEngine(descriptors).route(spec))
+        val decision = ToolRoutingEngine(descriptors).route(spec)
+
+        // 阶段二注入：默认保持排名摘要；format=injection 给出 6.4 规范的候选块 + 选择规则，
+        // format=json 只给结构化 JSON；variant 用于 A–F 消融实验。
+        val variant = InjectionVariant.entries
+            .firstOrNull { it.name.equals(args.stringArg("variant")?.trim(), ignoreCase = true) }
+            ?: InjectionVariant.D_RANKING_WITH_RATIONALE
+        return true to when (args.stringArg("format")?.trim()?.lowercase()) {
+            "injection" -> RoutingInjection.renderText(decision, variant, descriptors)
+            "json" -> RoutingInjection.build(decision, variant, descriptors).toString()
+            else -> RoutingLog.render(decision)
+        }
     }
 
     /** 宿主能力域的静态描述符：只读属性以可信风险策略目录为准，不用名称猜。 */

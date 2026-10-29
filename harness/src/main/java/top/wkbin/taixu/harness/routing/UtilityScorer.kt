@@ -29,7 +29,7 @@ internal object UtilityScorer {
             taskFit = taskFit(spec, caps),
             empiricalSuccess = empiricalSuccess(tool, spec),
             outputQuality = outputQuality(tool, spec),
-            reliability = reliability(tool),
+            reliability = reliability(tool, spec),
             taskFeedback = taskFeedback(feedback),
         )
     }
@@ -99,16 +99,20 @@ internal object UtilityScorer {
         )
     }
 
-    private fun reliability(tool: ToolDescriptor): ScoreComponent {
-        val rel = tool.quality.reliability
-        if (!rel.hasEvidence) {
-            return ScoreComponent(NEUTRAL, EvidenceState.UNKNOWN, "无调用可靠性数据")
-        }
+    /**
+     * 运行可靠性：优先使用**本任务类别**的实测，缺失时才回退到全局统计，
+     * 且回退必须在理由中标注，避免把跨类可靠性说成同类证据。
+     */
+    private fun reliability(tool: ToolDescriptor, spec: SubTaskSpec): ScoreComponent {
+        val lookup = tool.quality.reliabilityFor(spec.taskClass)
+            ?: return ScoreComponent(NEUTRAL, EvidenceState.UNKNOWN, "无调用可靠性数据（含全局）")
+        val rel = lookup.stat
         val bad = rel.failureCount + rel.timeoutCount + rel.schemaViolationCount
         val rate = (bad.toDouble() / rel.invocationCount).coerceIn(0.0, 1.0)
         val smoothedRate = smooth(rate, rel.invocationCount)
         val score = (1.0 - smoothedRate).coerceIn(0.0, 1.0)
-        return ScoreComponent(score, rel.evidence, "调用 ${rel.invocationCount} 次，异常 ${bad} 次")
+        val scope = if (lookup.scopedToTaskClass) "本任务类别" else "全局回退（非本任务类别）"
+        return ScoreComponent(score, rel.evidence, "$scope：调用 ${rel.invocationCount} 次，异常 $bad 次")
     }
 
     private fun taskFeedback(feedback: ToolTaskFeedback): ScoreComponent {
