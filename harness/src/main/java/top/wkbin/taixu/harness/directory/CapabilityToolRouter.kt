@@ -3,15 +3,24 @@ package top.wkbin.taixu.harness.directory
 import kotlinx.serialization.json.JsonObject
 import top.wkbin.taixu.core.model.McpToolAnnotations
 import top.wkbin.taixu.core.model.McpToolInfo
+import top.wkbin.taixu.harness.routing.ErrorKind
 import top.wkbin.taixu.harness.routing.EvidenceState
 import top.wkbin.taixu.harness.routing.InjectionVariant
 import top.wkbin.taixu.harness.routing.ExecutionPolicy
+import top.wkbin.taixu.harness.routing.LoopStatus
 import top.wkbin.taixu.harness.routing.RoutingInjection
 import top.wkbin.taixu.harness.routing.RoutingLog
 import top.wkbin.taixu.harness.routing.SideEffectLevel
 import top.wkbin.taixu.harness.routing.SubTaskSpec
+import top.wkbin.taixu.harness.routing.SubtaskAcceptance
+import top.wkbin.taixu.harness.routing.LoopConfig
+import top.wkbin.taixu.harness.routing.VerificationCheck
+import top.wkbin.taixu.harness.routing.VerificationKind
+import top.wkbin.taixu.harness.routing.TaskExecutionLoop
 import top.wkbin.taixu.harness.routing.ToolDescriptor
 import top.wkbin.taixu.harness.routing.ToolDescriptorFactory
+import top.wkbin.taixu.harness.routing.ToolExecutionResult
+import top.wkbin.taixu.harness.routing.ToolOutput
 import top.wkbin.taixu.harness.routing.ToolRoutingEngine
 import top.wkbin.taixu.harness.mcp.McpManager
 import top.wkbin.taixu.harness.mcp.McpToolCallPolicy
@@ -93,19 +102,7 @@ class CapabilityToolRouter(
         val goal = args.stringArg("goal")?.trim().orEmpty()
         if (goal.isBlank()) return false to "route 需要 goal 参数（描述要完成的子任务）"
 
-        val descriptors = ArrayList<ToolDescriptor>()
-        mcpManager?.enabledServerSummaries()?.forEach { summary ->
-            val tools = mcpManager.cachedToolsOf(summary.id)
-            if (tools.isEmpty()) return@forEach
-            val visible = toolPolicy?.filterEnabled(summary.id, tools) ?: tools
-            descriptors += ToolDescriptorFactory.fromMcpTools(
-                serverId = summary.id,
-                serverName = summary.name,
-                tools = tools,
-                enabledToolNames = visible.map { it.name }.toSet(),
-            )
-        }
-        descriptors += hostDescriptors()
+        val descriptors = buildRegistry()
         if (descriptors.isEmpty()) {
             return false to "路由注册表为空：没有已缓存的 MCP 工具，也没有宿主能力。请先用 list/inspect 发现能力域后再 route。"
         }
@@ -132,6 +129,95 @@ class CapabilityToolRouter(
             "injection" -> RoutingInjection.renderText(decision, variant, descriptors)
             "json" -> RoutingInjection.build(decision, variant, descriptors).toString()
             else -> RoutingLog.render(decision)
+        }
+    }
+
+    /** 路由注册表：已缓存 MCP 工具 + 宿主能力域。只用缓存，不拉起进程。 */
+    private suspend fun buildRegistry(): List<ToolDescriptor> {
+        val descriptors = ArrayList<ToolDescriptor>()
+        mcpManager?.enabledServerSummaries()?.forEach { summary ->
+            val tools = mcpManager.cachedToolsOf(summary.id)
+            if (tools.isEmpty()) return@forEach
+            val visible = toolPolicy?.filterEnabled(summary.id, tools) ?: tools
+            descriptors += ToolDescriptorFactory.fromMcpTools(
+                serverId = summary.id,
+                serverName = summary.name,
+                tools = tools,
+                enabledToolNames = visible.map { it.name }.toSet(),
+            )
+        }
+        descriptors += hostDescriptors()
+        return descriptors
+    }
+
+    /**
+     * 闭环执行：路由 → 执行 → 验收 → 失败分类 → 重路由。
+     *
+     * 与单次调用相比多做三件事：结果为空/失败时自动换同族候选；临时故障有限重试；
+     * 写操作副作用不明时停止并要求先查状态，而不是重复提交。
+     */
+    private suspend fun invokeWithCloseLoop(
+        args: JsonObject,
+        seedServerId: String,
+        seedTool: String,
+        callArgs: JsonObject,
+        workspace: String,
+        parentToolCallId: String?,
+        operationId: String?,
+        sessionId: String,
+        metadata: MutableMap<String, String>,
+    ): Pair<Boolean, String> {
+        val registry = buildRegistry()
+        if (registry.isEmpty()) {
+            return invokeCapability(seedServerId, seedTool, callArgs, workspace, parentToolCallId, operationId, sessionId, metadata)
+        }
+        // callArgs 是**原服务专用**的参数契约：跨服务切换必然参数不匹配，
+        // 因此自动闭环只在本服务内换同族工具；跨服务替代应由模型按 route 结果重新构造参数。
+        val sameServer = registry.filter { it.serverId.equals(seedServerId, ignoreCase = true) }
+        val descriptors = sameServer.ifEmpty { registry }
+        val goal = args.stringArg("goal")?.trim().orEmpty()
+            .ifBlank { "调用 $seedServerId.$seedTool 并返回可用结果" }
+        val spec = SubTaskSpec(
+            id = args.stringArg("subtask_id")?.trim().orEmpty().ifBlank { "call-$seedTool" },
+            goal = goal,
+            taskClass = args.stringArg("task_class")?.trim().orEmpty(),
+            requiredOperations = splitArg(args, "operations"),
+            requiredDomains = splitArg(args, "domains"),
+        )
+        val acceptance = SubtaskAcceptance(
+            args.stringArg("expect_contains")
+                ?.split(',', '\uFF0C')
+                ?.map { it.trim() }
+                ?.filter { it.isNotBlank() }
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { items ->
+                    listOf(
+                        VerificationCheck(VerificationKind.NON_EMPTY, description = "返回非空"),
+                        VerificationCheck(VerificationKind.CONTAINS_ALL, params = items, description = "覆盖关键内容"),
+                    )
+                }
+                ?: listOf(VerificationCheck(VerificationKind.NON_EMPTY, description = "返回非空")),
+        )
+        val loop = TaskExecutionLoop(ToolRoutingEngine(descriptors), LoopConfig(acceptance = acceptance))
+        val outcome = loop.run(spec) { descriptor ->
+            val (ok, text) = invokeCapability(
+                descriptor.serverId, descriptor.name, callArgs,
+                workspace, parentToolCallId, operationId, sessionId, metadata,
+            )
+            ToolExecutionResult(
+                output = if (ok) ToolOutput(text = text) else null,
+                error = if (ok) null else ErrorKind.UNKNOWN,
+                errorMessage = if (ok) "" else text,
+                renderedText = text,
+            )
+        }
+        return when (outcome.status) {
+            LoopStatus.SUCCEEDED -> true to outcome.finalText
+            else -> false to buildString {
+                appendLine(outcome.finalText)
+                appendLine()
+                append(outcome.renderTrace())
+            }
         }
     }
 
@@ -266,7 +352,13 @@ class CapabilityToolRouter(
             return false to "call 需要 server 与 tool 参数（先 inspect 查看可用的工具名与参数）"
         }
         val callArgs = args["arguments"] as? JsonObject ?: JsonObject(emptyMap())
-        return invokeCapability(serverId, tool, callArgs, workspace, parentToolCallId, operationId, sessionId, metadata)
+        // 默认路径完全不变；只有显式 auto_route=true 才走"执行 → 验收 → 重路由"闭环。
+        if (!isTrue(args, "auto_route")) {
+            return invokeCapability(serverId, tool, callArgs, workspace, parentToolCallId, operationId, sessionId, metadata)
+        }
+        return invokeWithCloseLoop(
+            args, serverId, tool, callArgs, workspace, parentToolCallId, operationId, sessionId, metadata,
+        )
     }
 
     /**

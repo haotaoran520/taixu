@@ -17,6 +17,8 @@ internal data class ToolExecutionResult(
     val output: ToolOutput? = null,
     val error: ErrorKind? = null,
     val errorMessage: String = "",
+    /** 原始渲染文本：闭环成功后要原样回传给调用方。 */
+    val renderedText: String = "",
 )
 
 /** 分类结论：类型 + 是否可重试 + 副作用是否不确定。 */
@@ -67,9 +69,18 @@ internal object FailureClassifier {
                 ErrorKind.PERMISSION_DENIED, ErrorKind.UNSUPPORTED -> ClassifiedFailure(
                     FailureType.CAPABILITY_MISMATCH, "当前环境不支持该能力（${error.name}）", retryable = false,
                 )
-                ErrorKind.UNKNOWN -> ClassifiedFailure(
-                    FailureType.TRANSIENT_INFRASTRUCTURE, "未知错误，按临时故障处理一次", retryable = true,
-                )
+                ErrorKind.UNKNOWN -> if (writeOperation) {
+                    ClassifiedFailure(
+                        FailureType.UNKNOWN_SIDE_EFFECT,
+                        "写操作返回未知错误，副作用未确认，需先验证状态",
+                        retryable = false,
+                        sideEffectUncertain = true,
+                    )
+                } else {
+                    ClassifiedFailure(
+                        FailureType.TRANSIENT_INFRASTRUCTURE, "未知错误，按临时故障处理一次", retryable = true,
+                    )
+                }
             }
         }
 
